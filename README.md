@@ -27,8 +27,20 @@ npx skills add ZEYUJIANG1991/whiteboard-sketch-video
 bash whiteboard-sketch-video/scripts/setup_env.sh   # 建 Python venv
 ```
 
-系统依赖：`python3`、`ffmpeg`。配音默认用 MiniMax TTS（可换任何 TTS），
-对齐用 whisper 词级时间戳，生图用任何能出 3:4 白底线稿 PNG 的模型。
+## ⚠️ 需要自备的两个模型接口
+
+本 skill 的绘制引擎是纯本地计算（不花钱），但**生图和配音需要你自己配模型 API**：
+
+| 环节 | 要求 | 默认实现 | 可替换为 |
+|---|---|---|---|
+| 生图 | 能按提示词出 3:4 白底黑线插画 PNG | GPT-Image 类接口 | Gemini / 万相 / Seedream / 任意文生图 API |
+| 配音 TTS | 文本 → mp3 | MiniMax TTS | Azure / 火山 / edge-tts / 任意 TTS |
+| 对齐 | whisper 词级时间戳 | mlx_whisper（Apple Silicon） | openai-whisper / faster-whisper |
+
+生图质量直接决定成片质量，建议选中文书写能力强的模型。把你的 API 调用方式
+告诉你的 Agent，它会自行接入——管线只消费"PNG 文件"和"mp3 文件"，不关心来源。
+
+其他系统依赖：`python3`、`ffmpeg`。
 
 ## 使用
 
