@@ -1,0 +1,20 @@
+{
+  "name": "bcc",
+  "canvas": { "w": 1080, "h": 1920 },
+  "ink_hex": "#0a1436",
+  "palette": {
+    "primary":   { "hex": "#0125df", "name": "deep cobalt blue",   "role": "主角填色 / 主流程箭头 / 主标注" },
+    "secondary": { "hex": "#22c1cd", "name": "bright teal",        "role": "次要物件填色 / 次要注释" },
+    "accent":    { "hex": "#ff58f9", "name": "vivid magenta pink", "role": "警示 / 问题 / 关键结果，每图≤2处" }
+  },
+  "fonts": {
+    "title":   { "path": "~/Library/Fonts/手书体.ttf",
+                 "fallbacks": ["/System/Library/Fonts/Supplemental/Songti.ttc"] },
+    "caption": { "path": "~/Library/Fonts/手书体.ttf",
+                 "fallbacks": ["/System/Library/Fonts/Supplemental/Songti.ttc"] }
+  },
+  "title":        { "size": 78, "y": 360, "draw_seconds": 0.7 },
+  "caption":      { "size": 56, "y": 1280 },
+  "illustration": { "max_w": 900, "max_h": 780, "cy": 860, "draw_frac": 0.6 },
+  "pointer":      { "mode": "pen", "hand_asset": null, "hand_height": 430 }
+}
