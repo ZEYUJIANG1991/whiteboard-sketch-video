@@ -69,7 +69,8 @@ for i in range(1, len(S)):
         S_time[i] = S_time[i - 1]
 
 SOFT, HARD = "，、：；", "。？！"
-vis = lambda t: len(t.replace(" ", ""))
+def vis(t):  # visual width in CJK cells: latin/digits/space ~ half width
+    return sum(0.5 if re.match(r"[A-Za-z0-9 .\-]", c) else 1.0 for c in t)
 
 atoms, cur, cs = [], "", 0
 for i, ch in enumerate(S):
@@ -82,10 +83,17 @@ if cur.strip():
 
 # merge atoms into <=MAXLEN lines, never across a hard stop
 lines, c = [], None
-for a in atoms:
+for ai, a in enumerate(atoms):
+    nxt = atoms[ai + 1] if ai + 1 < len(atoms) else None
     if c is None:
         c = dict(a)
     elif c["hard"] or vis(c["text"] + a["text"]) > args.maxlen:
+        lines.append(c); c = dict(a)
+    elif (nxt is not None and not a["hard"] and vis(a["text"]) <= 4
+          and vis(c["text"] + a["text"] + nxt["text"]) > args.maxlen
+          and vis(a["text"] + nxt["text"]) <= args.maxlen):
+        # short clause-head (e.g. "点子，") would be orphaned from its
+        # continuation -> break BEFORE it (the "；点子" pitfall)
         lines.append(c); c = dict(a)
     else:
         c["text"] += a["text"]; c["hard"] = a["hard"]
@@ -95,6 +103,9 @@ if c:
 def tokenize(text, base):
     toks, i = [], 0
     while i < len(text):
+        m = re.match(r"《[^》]{1,24}》", text[i:])
+        if m:  # book/work titles stay atomic
+            toks.append((m.group(0), base + i)); i += len(m.group(0)); continue
         if re.match(r"[A-Za-z0-9]", text[i]):
             j = i
             while j < len(text) and re.match(r"[A-Za-z0-9.\-]", text[j]):
@@ -108,15 +119,19 @@ final = []
 for ln in lines:
     if vis(ln["text"]) <= args.maxlen:
         final.append({"s": ln["s"], "text": ln["text"]}); continue
+    import math
+    total_w = vis(ln["text"])
+    target = total_w / math.ceil(total_w / args.maxlen)  # balanced pieces
     pieces, cur, cst = [], "", None
     for tok, pos in tokenize(ln["text"], ln["s"]):
         tok_latin = bool(re.match(r"[A-Za-z0-9]", tok))
         st = cur.strip()
         last_cjk = bool(st) and not re.match(r"[A-Za-z0-9 ]", st[-1])
-        early = tok_latin and last_cjk and vis(cur) >= args.maxlen - 8  # latin names off the tail
+        early = tok_latin and last_cjk and vis(cur) >= args.maxlen - 4  # latin names off the tail
         if cur == "":
             cur, cst = tok, pos
-        elif vis(cur + tok) > args.maxlen or early:
+        elif vis(cur + tok) > args.maxlen or early or \
+                (vis(cur) >= target and vis(cur + tok) > target + 1):
             pieces.append({"s": cst, "text": cur}); cur, cst = tok, pos
         else:
             cur += tok

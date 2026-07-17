@@ -61,6 +61,8 @@ def autocrop_scale(path, box, contrast=1.15):
 def render_text_img(text, size, font_path, rgb, canvas_w):
     f = ImageFont.truetype(font_path, size)
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    # last-resort shrink ONLY for a single unsplittable token (e.g. a long URL);
+    # normal over-wide captions are split upstream by split_overwide()
     while size > 24 and probe.textlength(text, font=f) > canvas_w - 80:
         size -= 4
         f = ImageFont.truetype(font_path, size)
@@ -95,6 +97,55 @@ def parse_captions(path, fps):
             caps.append((m.group(3), int(round(float(m.group(1))*fps)),
                          int(round(float(m.group(2))*fps))))
     return caps
+
+
+CAP_PUNCT = "，、；：。！？…"
+
+
+def _split_text_to_fit(text, f, probe, maxw):
+    """Split at token boundaries (latin runs & 《...》 atomic), preferring
+    punctuation near the middle; recurse until every piece fits."""
+    if probe.textlength(text, font=f) <= maxw:
+        return [text]
+    toks = re.findall(r"《[^》]{1,24}》|[A-Za-z0-9.\-%]+|.", text)
+    if len(toks) < 2:
+        return [text]  # unsplittable single token -> caller's shrink fallback
+    widths = [probe.textlength(t, font=f) for t in toks]
+    total = sum(widths)
+    best, cum = None, 0.0
+    for i in range(len(toks) - 1):
+        cum += widths[i]
+        if cum > maxw:
+            break
+        left_n = sum(len(t) for t in toks[:i + 1])
+        if left_n < 3 or len(text) - left_n < 3:   # no 1-2 char orphans
+            continue
+        score = abs(cum - total / 2) - (total * 0.25 if toks[i] in CAP_PUNCT else 0)
+        if best is None or score < best[0]:
+            best = (score, i)
+    i = best[1] if best else max(0, len(toks) // 2 - 1)
+    left = "".join(toks[:i + 1]).rstrip("，、；： ")
+    right = "".join(toks[i + 1:]).lstrip("，、；： ")
+    return [left] + _split_text_to_fit(right, f, probe, maxw)
+
+
+def split_overwide(caps, font_path, size, canvas_w):
+    """Over-wide captions become sequential captions with proportional timing."""
+    f = ImageFont.truetype(font_path, size)
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    out = []
+    for text, s0, e0 in caps:
+        parts = _split_text_to_fit(text, f, probe, canvas_w - 80)
+        if len(parts) == 1:
+            out.append((text, s0, e0))
+            continue
+        total = sum(len(p) for p in parts)
+        t = float(s0)
+        for k, ptxt in enumerate(parts):
+            t1 = float(e0) if k == len(parts) - 1 else t + (e0 - s0) * len(ptxt) / total
+            out.append((ptxt, int(round(t)), int(round(t1))))
+            t = t1
+    return out
 
 
 def make_pen():
@@ -149,6 +200,7 @@ def main(project_path, preview_scene=None):
     total = proj["total_frames"] + proj.get("tail_frames", 60)
 
     caps = parse_captions(proj.get("captions"), fps)
+    caps = split_overwide(caps, cfont, C["size"], W)
     cap_imgs = {(s, e): render_text_img(t, C["size"], cfont, ink, W)
                 for t, s, e in caps}
 
