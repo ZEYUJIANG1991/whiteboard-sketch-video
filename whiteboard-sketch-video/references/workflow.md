@@ -9,13 +9,16 @@
 金句密度：每幕至少一句可截图传播的话。存 `script.txt`，每幕一行。
 
 ## 2. 配音 TTS
+任何能出 mp3 的 TTS 都可以（管线只消费音频文件）。本机若有 `mmtts`（MiniMax）：
 ```bash
 mmtts -f script.txt -o vo.mp3 --voice "Chinese (Mandarin)_Radio_Host" --speed 1.06
 ```
-无 mmtts 时任何能出 mp3 的 TTS 均可（对齐只依赖音频本身）。
-ffprobe 核对时长，超预期就精简文稿，别硬塞。
+没有则用你惯用的 TTS API/工具生成 vo.mp3。ffprobe 核对时长，超预期就精简
+文稿，别硬塞。TTS 防"卡顿"：中文文稿逗号别太碎——多数 TTS 每个逗号停一拍。
 
 ## 3. 词级对齐 → 字幕 + 帧表
+需要 whisper 词级时间戳（任选其一安装：Apple Silicon 用 `pip install mlx-whisper`；
+其他平台 `pip install openai-whisper` 后命令换成 `whisper`，参数相同）：
 ```bash
 ffmpeg -y -i vo.mp3 -ar 16000 -ac 1 /tmp/vo.wav
 mlx_whisper /tmp/vo.wav --language zh --word-timestamps True \
@@ -24,6 +27,8 @@ python3 scripts/align_captions.py /tmp/vo.json script.txt --anchors anchors.txt 
     > captions.ts   # stderr 给出 SCENE START FRAMES / TOTAL
 ```
 anchors.txt：第 2..N 幕的幕首词子串，每行一个。
+已有现成 SRT 字幕的话可以跳过本步：compose.py 直接接受 .srt（"captions" 指向
+srt 文件即可），幕起始帧改为手动按 srt 时间 × fps 计算。
 **坑：字幕分句必须逐条人工 QA**——英文词（《Rewired》）按字母计长会拦腰断词
 （"里的真/实记录"）；"；"处会把后句头两字孤悬前句尾（"…；点子"）。
 修法：直接改 captions.ts 文本，时间边界按字数比例插值（±0.2s 无感）。
@@ -42,7 +47,17 @@ anchors.txt：第 2..N 幕的幕首词子串，每行一个。
   "captions": "captions.ts", "out": "silent.mp4",
   "scenes": [ { "start": 0, "title": "麦肯锡 · Rewired", "image": "illust/s1.png" } ] }
 ```
-start 取自第 3 步帧表；total_frames 取 TOTAL。
+start 取自第 3 步帧表；total_frames 取 TOTAL。"captions" 可指向 .ts 或 .srt，
+也可整个省略（无字幕）；"brand" 可以是包名（skill 的 brand/ 下）或 brand.json
+的绝对路径；"title" 留空则该幕不画标题。
+
+### 单图转换模式（把一张图做成一段白板动画）
+一幕、无字幕、无标题即可：
+```json
+{ "brand": "default", "fps": 30, "total_frames": 240, "tail_frames": 45,
+  "out": "out.mp4", "scenes": [ { "start": 0, "image": "your.png" } ] }
+```
+渲染后用 mux.sh 配任意音频，或直接交付无声片段。
 
 ## 7. 渲染 + 混音
 ```bash

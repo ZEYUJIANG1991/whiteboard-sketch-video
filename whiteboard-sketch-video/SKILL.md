@@ -31,8 +31,9 @@ bash scripts/mux.sh silent.mp4 vo.mp3 bgm.mp3 final.mp4
 
 ## 单图转换模式
 
-用户只给一张白底线稿图时：写一个单幕 project.json（title 留空、captions 给空
-文件、total_frames = 时长×fps），compose.py 直接出该图的逐笔绘制片段。
+用户只给一张白底线稿图时：写一个单幕 project.json（title 留空、省略 captions、
+total_frames = 时长×fps），compose.py 直接出该图的逐笔绘制片段。模板见
+workflow.md 第 6 节。字幕输入支持自研 .ts 或标准 .srt。
 
 ## 品牌定制（核心扩展点）
 

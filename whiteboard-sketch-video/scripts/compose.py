@@ -42,8 +42,12 @@ def hex_rgb(h):
 
 def autocrop_scale(path, box, contrast=1.15):
     img = cv2.imread(path, cv2.IMREAD_COLOR)
+    if img is None:
+        raise FileNotFoundError(f"illustration not readable: {path}")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     ys, xs = np.nonzero(gray < 245)
+    if len(xs) == 0:
+        raise ValueError(f"illustration appears blank (all white): {path}")
     pad = 30
     y0, y1 = max(ys.min()-pad, 0), min(ys.max()+pad, img.shape[0])
     x0, x1 = max(xs.min()-pad, 0), min(xs.max()+pad, img.shape[1])
@@ -56,6 +60,10 @@ def autocrop_scale(path, box, contrast=1.15):
 
 def render_text_img(text, size, font_path, rgb, canvas_w):
     f = ImageFont.truetype(font_path, size)
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    while size > 24 and probe.textlength(text, font=f) > canvas_w - 80:
+        size -= 4
+        f = ImageFont.truetype(font_path, size)
     im = Image.new("RGB", (canvas_w, int(size*1.6)), "white")
     d = ImageDraw.Draw(im)
     tw = d.textlength(text, font=f)
@@ -63,12 +71,29 @@ def render_text_img(text, size, font_path, rgb, canvas_w):
     return cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
 
 
-def parse_captions(ts_path, fps):
-    src = open(ts_path).read()
+def parse_captions(path, fps):
+    """Accept align_captions.py .ts output OR standard .srt. Missing/empty -> no captions."""
+    if not path or not os.path.isfile(path):
+        return []
+    src = open(path, encoding='utf-8').read().strip()
+    if not src:
+        return []
     caps = []
-    for m in re.finditer(r"\{ t0: ([\d.]+), t1: ([\d.]+), text: '([^']+)' \}", src):
-        caps.append((m.group(3), int(round(float(m.group(1))*fps)),
-                     int(round(float(m.group(2))*fps))))
+    if path.endswith('.srt') or ' --> ' in src[:500]:
+        for b in re.split(r'\n\s*\n', src):
+            m = re.search(r'(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)', b)
+            if not m:
+                continue
+            g = list(map(int, m.groups()))
+            t0 = g[0]*3600 + g[1]*60 + g[2] + g[3]/1000
+            t1 = g[4]*3600 + g[5]*60 + g[6] + g[7]/1000
+            text = ' '.join(l.strip() for l in b[m.end():].splitlines() if l.strip())
+            if text:
+                caps.append((text, int(round(t0*fps)), int(round(t1*fps))))
+    else:
+        for m in re.finditer(r"\{ t0: ([\d.]+), t1: ([\d.]+), text: '([^']+)' \}", src):
+            caps.append((m.group(3), int(round(float(m.group(1))*fps)),
+                         int(round(float(m.group(2))*fps))))
     return caps
 
 
@@ -123,7 +148,7 @@ def main(project_path, preview_scene=None):
     T, C, IL = brand["title"], brand["caption"], brand["illustration"]
     total = proj["total_frames"] + proj.get("tail_frames", 60)
 
-    caps = parse_captions(proj.get("captions", "captions.ts"), fps)
+    caps = parse_captions(proj.get("captions"), fps)
     cap_imgs = {(s, e): render_text_img(t, C["size"], cfont, ink, W)
                 for t, s, e in caps}
 
@@ -154,6 +179,9 @@ def main(project_path, preview_scene=None):
     rng = range(total) if preview_scene is None else \
         range(scenes[preview_scene]['start'], scenes[preview_scene]['end'])
     out_path = proj.get("out", "silent.mp4")
+    if preview_scene is not None:  # never clobber the full render with a preview
+        root, ext = os.path.splitext(out_path)
+        out_path = f"{root}.preview{preview_scene}{ext}"
     os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
     cmd = ['ffmpeg', '-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'bgr24',
            '-s', f'{W}x{H}', '-r', str(fps), '-i', '-', '-c:v', 'libx264',
